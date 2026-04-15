@@ -21,7 +21,8 @@ usage: drm-emulate [-h] [--redis_host HOST] [--redis_port PORT]
                    [--redis_db DB] --redis_in CHANNEL --redis_out CHANNEL
                    [--redis_timeout NUM] -o
                    {bluechannel-png,grayscale-png,indexed-png,opex} [-d SEC]
-                   [-v] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                   [--labels [LABEL ...]] [-n NUM] [-v]
+                   [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
 
 Emulates a Deep Learning model processing data via Redis.
 
@@ -46,6 +47,10 @@ options:
                         The type of output to generated. (default: None)
   -d SEC, --delay SEC   The delay between receiving the data and generating
                         the output in seconds. (default: 0.5)
+  --labels [LABEL ...]  The labels to generate. (default: None)
+  -n NUM, --num_objects NUM
+                        The number of random object detection objects to
+                        generate. (default: 10)
   -v, --verbose         Whether to be more verbose with the output. (default:
                         False)
   -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --logging_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}

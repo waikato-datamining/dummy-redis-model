@@ -45,5 +45,6 @@ setup(
         "redis_docker_harness",
         "fast_opex",
         "wai_logging",
+        "simple_palette_utils",
     ]
 )

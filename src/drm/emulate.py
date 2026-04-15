@@ -1,10 +1,12 @@
 import io
 import logging
+import numpy as np
+import random
 import traceback
 from datetime import datetime
 from time import sleep
 
-from opex import ObjectPredictions
+from opex import ObjectPredictions, ObjectPrediction, BBox, Polygon
 from PIL import Image
 from rdh import Container, MessageContainer, create_parser, configure_redis, run_harness, log
 from wai.logging import init_logging, set_logging_level, add_logging_level
@@ -58,20 +60,53 @@ def process_data(msg_cont):
             img = Image.open(io.BytesIO(msg_cont.message['data']))
             w, h = img.size
             if config.output in [OUTPUT_BLUECHANNEL_PNG, OUTPUT_GRAYSCALE_PNG, OUTPUT_INDEXED_PNG]:
+                out = None
                 if config.output == OUTPUT_BLUECHANNEL_PNG:
-                    out = Image.new('RGB', (w, h))
+                    if config.labels is not None:
+                        arr = np.zeros((w, h, 3), dtype=np.uint8)
+                        arr_blue = np.random.rand(w, h, 1) * (len(config.labels)+1)
+                        arr[:, :, 2] = arr_blue[:, :, 0]
+                        out = Image.fromarray(arr.astype('uint8')).convert('RGB')
+                    else:
+                        out = Image.new('RGB', (w, h))
                 elif config.output == OUTPUT_GRAYSCALE_PNG:
-                    out = Image.new('L', (w, h))
+                    if config.labels is not None:
+                        arr = np.zeros((w, h, 3), dtype=np.uint8)
+                        arr_gray = np.random.randint(0, len(config.labels)+1, (w, h, 1), dtype=np.uint8)
+                        arr[:, :, 0] = arr_gray[:, :, 0]
+                        arr[:, :, 1] = arr_gray[:, :, 0]
+                        arr[:, :, 2] = arr_gray[:, :, 0]
+                        out = Image.fromarray(arr).convert('L')
+                    else:
+                        out = Image.new('L', (w, h))
                 elif config.output == OUTPUT_INDEXED_PNG:
-                    out = Image.new('P', (w, h))
-                else:
-                    raise Exception("Unhandled output type: %s" % config.output)
-                buf = io.BytesIO()
-                out.save(buf, format="PNG")
-                data_out = buf.getvalue()
+                    if config.labels is not None:
+                        arr = np.random.randint(0, len(config.labels)+1, (w, h), dtype=np.uint8)
+                        out = Image.fromarray(arr).convert('P')
+                    else:
+                        out = Image.new('P', (w, h))
+                if out is not None:
+                    buf = io.BytesIO()
+                    out.save(buf, format="PNG")
+                    data_out = buf.getvalue()
             elif config.output == OUTPUT_OPEX:
-                preds = ObjectPredictions(id=start_time.strftime("%Y%m%d-%H%M%S.%f"), objects=[])
+                objs = []
+                if config.num_objects > 0:
+                    for i in range(config.num_objects):
+                        x = random.randint(1, w)
+                        y = random.randint(1, h)
+                        w = random.randint(1, w)
+                        h = random.randint(1, h)
+                        label = "object"
+                        if config.labels is not None:
+                            label = config.labels[random.randint(0, len(config.labels)-1)]
+                        bbox = BBox(left=x, top=y, right=x+w-1, bottom=y+h-1)
+                        poly = Polygon(points=[[x, y], [x+w-1, y], [x+w-1, y+h-1], [x, y+h-1]])
+                        obj = ObjectPrediction(label=label, bbox=bbox, polygon=poly)
+                        objs.append(obj)
+                preds = ObjectPredictions(id=start_time.strftime("%Y%m%d-%H%M%S.%f"), objects=objs)
                 data_out = preds.to_json_string()
+                print(data_out)
 
         if data_out is None:
             raise Exception("Unhandled output type: %s" % config.output)
@@ -104,6 +139,8 @@ def main(args=None):
     parser = create_parser("Emulates a Deep Learning model processing data via Redis.", prog=EMULATE, prefix="redis_")
     parser.add_argument("-o", "--output", choices=OUTPUTS, help="The type of output to generated.", default=None, required=True)
     parser.add_argument("-d", "--delay", metavar="SEC", help="The delay between receiving the data and generating the output in seconds.", default=0.5, type=float, required=False)
+    parser.add_argument("--labels", metavar="LABEL", help="The labels to generate.", default=None, type=str, required=False, nargs="*")
+    parser.add_argument("-n", "--num_objects", metavar="NUM", help="The number of random object detection objects to generate.", default=10, type=int, required=False)
     parser.add_argument("-v", "--verbose", required=False, action='store_true', help='Whether to be more verbose with the output.')
     add_logging_level(parser)
     parsed = parser.parse_args(args=args)
@@ -113,6 +150,8 @@ def main(args=None):
     config.output = parsed.output
     config.delay = parsed.delay
     config.verbose = parsed.verbose
+    config.labels = parsed.labels
+    config.num_objects = parsed.num_objects
 
     params = configure_redis(parsed, config=config)
     run_harness(params, process_data)
